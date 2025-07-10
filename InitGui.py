@@ -17,78 +17,53 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
 
 
+# Launcher widget for FreeCAD (fixed for 2025+ with PySide2 and proper shortcut/focus)
+# Updated: July 10, 2025
+
+import FreeCADGui as Gui
+from PySide2 import QtWidgets, QtGui, QtCore
+
 def singleInstance():
-    """
-    Only have one instance of Launcher running.
-    """
-    import FreeCADGui as Gui
-    from PySide import QtGui
-
+    """Ensure only one instance is running."""
     mw = Gui.getMainWindow()
-
     if mw:
-        for i in mw.findChildren(QtGui.QDockWidget):
+        for i in mw.findChildren(QtWidgets.QDockWidget):
             if i.objectName() == "Launcher":
                 i.deleteLater()
-            else:
-                pass
-    else:
-        pass
 
 singleInstance()
 
-
 def dockWidget():
-    """
-    Launcher widget for FreeCAD
-    """
-    import FreeCADGui as Gui
-    from PySide import QtGui
-    from PySide import QtCore
-
+    """Create and show the Launcher dock widget."""
     mw = Gui.getMainWindow()
 
+    # Placeholder icon
     icon = """<svg xmlns="http://www.w3.org/2000/svg" height="64" width="64">
-              <rect height="64" width="64" fill="none" />
-              </svg>"""
-
+              <rect height="64" width="64" fill="none" /></svg>"""
     iconPixmap = QtGui.QPixmap()
     iconPixmap.loadFromData(str.encode(icon))
 
-    class LauncherEdit(QtGui.QLineEdit):
-        """
-        Define completer show/hide behavior.
-        """
-        def __init__(self, parent=None):
-            super(LauncherEdit, self).__init__(parent)
-
+    # Launcher input field with keyboard interaction
+    class LauncherEdit(QtWidgets.QLineEdit):
         def focusInEvent(self, e):
-            """
-            Prevent updating model data after closing completer.
-            """
-            if e.reason() == QtCore.Qt.PopupFocusReason:
-                pass
-            else:
+            if e.reason() != QtCore.Qt.PopupFocusReason:
                 modelData()
 
         def keyPressEvent(self, e):
-            """
-            Show completer after down key is pressed.
-            """
             if e.key() == QtCore.Qt.Key_Down:
-                edit.clear()
+                self.clear()
                 completer.setCompletionPrefix("")
                 completer.complete()
             else:
-                QtGui.QLineEdit.keyPressEvent(self, e)
+                super().keyPressEvent(e)
                 index = model.index(0, 0)
                 completer.popup().setCurrentIndex(index)
 
-    completer = QtGui.QCompleter()
+    # Setup completer
+    completer = QtWidgets.QCompleter()
     completer.setMaxVisibleItems(16)
     completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
     try:
-        # Qt 5.2 and up.
         completer.setFilterMode(QtCore.Qt.MatchContains)
     except AttributeError:
         pass
@@ -99,91 +74,65 @@ def dockWidget():
     model = QtGui.QStandardItemModel()
     completer.setModel(model)
 
-    widget = QtGui.QDockWidget()
-    widget.setWindowTitle("Launcher")
-    widget.setObjectName("Launcher")
-    widget.setWidget(edit)
-
-    if mw:
-        mw.addDockWidget(QtCore.Qt.LeftDockWidgetArea, widget)
-    else:
-        pass
+    # Create the dock widget
+    dock = QtWidgets.QDockWidget("Launcher")
+    dock.setObjectName("Launcher")
+    dock.setWidget(edit)
+    mw.addDockWidget(QtCore.Qt.LeftDockWidgetArea, dock)
 
     def modelData():
-        """
-        Fill the model with model items.
-        """
+        """Fill available actions into the launcher."""
         actions = {}
-        duplicates = []
-
-        for i in mw.findChildren(QtGui.QAction):
-            if i.objectName():
-                if i.objectName() in actions:
-                    if i.objectName() not in duplicates:
-                        duplicates.append(i.objectName())
-                    else:
-                        pass
-                else:
-                    actions[i.objectName()] = i
-            else:
-                pass
-
-        for d in duplicates:
-            del actions[d]
-
-        rows = len(actions)
+        for i in mw.findChildren(QtWidgets.QAction):
+            if i.objectName() and i.isEnabled():
+                actions[i.objectName()] = i
 
         model.clear()
-        model.setRowCount(rows)
-        model.setColumnCount(1)
-
-        row = 0
-
-        for i in actions:
-
+        for objName, action in actions.items():
             item = QtGui.QStandardItem()
-            item.setText((actions[i].text()).replace("&", ""))
-            if actions[i].icon():
-                item.setIcon(actions[i].icon())
-            else:
-                item.setIcon(QtGui.QIcon(QtGui.QIcon(iconPixmap)))
-            item.setToolTip(actions[i].toolTip())
-            item.setEnabled(actions[i].isEnabled())
-            item.setData(actions[i].objectName(), QtCore.Qt.UserRole)
-
-            model.setItem(row, 0, item)
-            row += 1
+            item.setText(action.text().replace("&", ""))
+            item.setIcon(action.icon() if action.icon() else QtGui.QIcon(iconPixmap))
+            item.setToolTip(action.toolTip())
+            item.setData(objName, QtCore.Qt.UserRole)
+            model.appendRow(item)
 
     def onCompleter(modelIndex):
-        """
-        When command is selected and triggered run it and update model data.
-        """
-        actions = {}
-
-        for i in mw.findChildren(QtGui.QAction):
-            actions[i.objectName()] = i
-
+        """Trigger action when selected from the list."""
         index = completer.completionModel().mapToSource(modelIndex)
         item = model.itemFromIndex(index)
-        data = item.data(QtCore.Qt.UserRole)
-
-        if data in actions:
-            actions[data].trigger()
-        else:
-            pass
-
+        cmd = item.data(QtCore.Qt.UserRole)
+        for act in mw.findChildren(QtWidgets.QAction):
+            if act.objectName() == cmd:
+                act.trigger()
+                break
         edit.clear()
         edit.clearFocus()
         edit.setFocus()
 
     completer.activated[QtCore.QModelIndex].connect(onCompleter)
 
-    a = QtGui.QAction(mw)
-    mw.addAction(a)
-    a.setText("Launcher focus")
-    a.setObjectName("SetLauncherFocus")
-    a.setShortcut(QtGui.QKeySequence("Ctrl+Shift+Q"))
+    # --- Fix: Ensure the launcher gets focus every time ---
+    def focusLauncher():
+        dock.show()
+        dock.raise_()
+        edit.setFocus(QtCore.Qt.ShortcutFocusReason)
 
-    a.triggered.connect(edit.setFocus)
+    # --- Bind ` grave key as shortcut ---
+    action_grave = QtWidgets.QAction("Launcher Grave Focus", mw)
+    action_grave.setShortcut(QtGui.QKeySequence("`"))
+    action_grave.setObjectName("SetLauncherFocusGrave")
+    action_grave.triggered.connect(focusLauncher)
+    mw.addAction(action_grave)
+
+    # Optional backup shortcut: Ctrl+Shift+Q
+    action_alt = QtWidgets.QAction("Launcher Alt Focus", mw)
+    action_alt.setShortcut(QtGui.QKeySequence("Ctrl+Shift+Q"))
+    action_alt.setObjectName("SetLauncherFocusAlt")
+    action_alt.triggered.connect(focusLauncher)
+    mw.addAction(action_alt)
+
+    # Show launcher and build initial model
+    modelData()
+    focusLauncher()
 
 dockWidget()
